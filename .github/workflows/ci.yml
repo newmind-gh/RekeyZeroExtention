@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install web
+        working-directory: apps/web
+        run: npm ci
+      - name: Check web
+        working-directory: apps/web
+        run: npm run check
+
+  extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/extension/package-lock.json
+      - name: Install extension
+        working-directory: apps/extension
+        run: npm ci
+      - name: Test extension
+        working-directory: apps/extension
+        run: npm test
+      - name: Check extension
+        working-directory: apps/extension
+        run: npm run check
+      - name: Install browser runtime
+        working-directory: apps/extension
+        run: npx playwright install --with-deps chromium
+      - name: Run extension browser validation
+        working-directory: apps/extension
+        run: xvfb-run --auto-servernum npm run test:e2e
+      - name: Build and scan release artifacts
+        working-directory: apps/extension
+        run: npm run release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-release-candidates
+          path: dist/
+          if-no-files-found: error

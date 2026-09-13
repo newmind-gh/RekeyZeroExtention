@@ -1,0 +1,8 @@
+# Default review owner for all repository content.
+* @newmind-gh
+
+# Security and release-sensitive areas.
+/.github/ @newmind-gh
+/apps/extension/ @newmind-gh
+/SECURITY.md @newmind-gh
+/LICENSE.md @newmind-gh

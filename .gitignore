@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+build/
+dist/
+coverage/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime data
+.data/
+artifacts/
+output/playwright/
+*.sqlite
+*.db
+
+# Playwright CLI runtime state
+.playwright/*
+!.playwright/cli.config.json
+
+# TypeScript build metadata
+*.tsbuildinfo

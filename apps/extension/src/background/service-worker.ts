@@ -1,0 +1,302 @@
+import { personalAdmin } from "@rekeyzero/active-runtime"
+
+import { matchFieldsWithBuiltinApi } from "../personal/ai/builtin-api-field-matcher"
+import {
+  BUILTIN_API_MODELS,
+  builtinApiHealth,
+  builtinApiModelConfig,
+  clearBuiltinApiModels,
+  configureBuiltinApiModel,
+  removeBuiltinApiModel,
+} from "../personal/ai/direct-api-provider"
+import type { WorkerRequest, WorkerResponse } from "../shared/messages"
+import type { PersonalAiSettingsView } from "../shared/types"
+import { logPersonalRuntimeError } from "../personal/storage/runtime-error-log"
+import { invalidateTransferTab, resetTransferRuntime, transferCommand, transferTabReady } from "../transfer/controller"
+import type { Command as TransferCommand, Session } from "../transfer/types"
+
+const API_MODEL_STORAGE_KEY = "rekeyzeroPersonalApiModelId"
+const LEGACY_API_MODEL_IDS: Record<string, string> = {
+  "personal-gemini-31-flash-lite-v1": "personal-gemini-api-v1",
+  "personal-gemini-35-flash-v1": "personal-gemini-api-v1",
+  "personal-gemini-38-flash-v1": "personal-gemini-api-v1",
+  "personal-deepseek-v41-flash-v1": "personal-deepseek-api-v1",
+  "personal-deepseek-v4-flash-v1": "personal-deepseek-api-v1",
+}
+function admin() {
+  if (!personalAdmin) throw new Error("Workspace administration is unavailable in this build")
+  return personalAdmin
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "RekeyZero could not complete this browser action"
+}
+
+async function reportRuntimeError(error: unknown, requestType: string): Promise<void> {
+  const apiModelId = await selectedApiModelId().catch(() => null)
+  const apiModel = BUILTIN_API_MODELS.find((model) => model.id === apiModelId)
+  const apiConfig = apiModel ? await builtinApiModelConfig(apiModel.id).catch(() => null) : null
+  const localSettings = apiModel ? null : await admin().aiSettings().catch(() => null)
+  const context = apiModel
+    ? { providerId: apiModel.provider, modelId: apiConfig?.model ?? "not-configured" }
+    : localSettings?.localModelEnabled && localSettings.localModelId
+      ? { providerId: "personal-local-lite", modelId: localSettings.localModelId }
+      : {}
+  await logPersonalRuntimeError(error, requestType, context).catch(() => undefined)
+}
+
+globalThis.addEventListener("error", (event: ErrorEvent) => {
+  void reportRuntimeError(event.error ?? event.message, "UNHANDLED_ERROR")
+})
+
+globalThis.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
+  void reportRuntimeError(event.reason, "UNHANDLED_REJECTION")
+})
+
+function isBuiltinApiModel(modelId: string): boolean {
+  return BUILTIN_API_MODELS.some((model) => model.id === modelId)
+}
+
+async function selectedApiModelId(): Promise<string | null> {
+  const stored = await chrome.storage.local.get(API_MODEL_STORAGE_KEY)
+  const modelId = stored[API_MODEL_STORAGE_KEY]
+  if (typeof modelId !== "string") return null
+  const currentModelId = LEGACY_API_MODEL_IDS[modelId] ?? modelId
+  if (!isBuiltinApiModel(currentModelId)) return null
+  if (currentModelId !== modelId) await chrome.storage.local.set({ [API_MODEL_STORAGE_KEY]: currentModelId })
+  return currentModelId
+}
+
+async function aiSettingsView(base?: PersonalAiSettingsView): Promise<PersonalAiSettingsView> {
+  const current = base ?? await admin().aiSettings()
+  const apiModelId = await selectedApiModelId()
+  const configs = new Map(await Promise.all(BUILTIN_API_MODELS.map(async (model) => [model.id, await builtinApiModelConfig(model.id)] as const)))
+  const health = new Map(await Promise.all(BUILTIN_API_MODELS.map(async (model) => [model.id, await builtinApiHealth(model.id)] as const)))
+  const apiModels = BUILTIN_API_MODELS.map((model) => {
+    const modelHealth = health.get(model.id) ?? {
+      status: "not_ready" as const,
+      model: model.defaultModel,
+      detail: "Enter the API key in the extension UI.",
+    }
+    const config = configs.get(model.id)
+    return {
+      id: model.id,
+      displayName: `${model.displayName} · API`,
+      provider: model.provider,
+      origin: model.origin,
+      model: modelHealth.model ?? model.defaultModel,
+      status: modelHealth.status,
+      detail: modelHealth.detail,
+      configured: config?.configured ?? false,
+      hasKey: config?.hasKey ?? false,
+      rememberKey: config?.rememberKey ?? false,
+    }
+  })
+  const apiCards = BUILTIN_API_MODELS.map((model) => {
+    const modelHealth = health.get(model.id) ?? {
+      status: "not_ready" as const,
+      model: model.defaultModel,
+      detail: "Enter the API key in the extension UI.",
+    }
+    return {
+      id: model.id,
+      displayName: `${model.displayName} · API`,
+      modelArtifact: modelHealth.model ? `${modelHealth.model} · direct API` : "",
+      runtimeAvailable: modelHealth.status === "ready",
+      experimental: false,
+      status: modelHealth.status,
+      detail: modelHealth.detail,
+      unavailableReason: modelHealth.status === "ready" ? undefined : "Not ready",
+      estimatedDownloadBytes: 0,
+      estimatedPeakMemoryMb: 0,
+    }
+  })
+  const selectedApiHealth = apiModelId ? health.get(apiModelId) : undefined
+  return {
+    ...current,
+    selectedModelId: apiModelId ?? (current.localModelEnabled ? current.localModelId : null),
+    apiModelId,
+    apiModels,
+    localModelEnabled: apiModelId ? true : current.localModelEnabled,
+    localModelId: apiModelId ?? current.localModelId,
+    localModelStatus: apiModelId ? selectedApiHealth?.status ?? "not_ready" : current.localModelStatus,
+    localModelDetail: apiModelId ? selectedApiHealth?.detail : current.localModelDetail,
+    localModels: [...current.localModels, ...apiCards],
+  }
+}
+
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined)
+
+async function handleWorkspaceRequest(request: WorkerRequest): Promise<unknown> {
+  if (request.type === "PERSONAL_GET_HOME") return admin().home()
+  if (request.type === "PERSONAL_SAVE_PROFILE") {
+    const result = await admin().saveProfile(request.profile)
+    await resetTransferRuntime()
+    return result
+  }
+  if (request.type === "PERSONAL_DELETE_PROFILE") {
+    const result = await admin().deleteProfile(request.profileId)
+    await resetTransferRuntime()
+    return result
+  }
+  if (request.type === "PERSONAL_SAVE_INFORMATION") return admin().saveInformation(request.information)
+  if (request.type === "PERSONAL_VALIDATE_PENDING") return admin().validatePending(request.revisionId, request.information)
+  if (request.type === "PERSONAL_DELETE_FACT") return admin().deleteFact(request.path)
+  if (request.type === "PERSONAL_DELETE_REVISION") return admin().deleteRevision(request.revisionId)
+  if (request.type === "PERSONAL_IMPORT_INFORMATION") return admin().importInformation(request.fileName, request.content)
+  if (request.type === "PERSONAL_CLEAR_ALL") {
+    await resetTransferRuntime()
+    await admin().clearAll()
+    await clearBuiltinApiModels()
+    await chrome.permissions.remove({
+      origins: BUILTIN_API_MODELS.map((model) => `${model.origin}/*`),
+    }).catch(() => false)
+    await chrome.storage.session.clear()
+    await chrome.storage.local.remove(API_MODEL_STORAGE_KEY)
+    return null
+  }
+  if (request.type === "PERSONAL_EXPORT") return admin().exportData()
+  if (request.type === "PERSONAL_EXPORT_RECOVERY") return admin().exportRecoveryData()
+  if (request.type === "PERSONAL_EXPORT_DIAGNOSTICS") return admin().exportDiagnostics()
+  if (request.type === "PERSONAL_GET_AI_SETTINGS") return aiSettingsView()
+  if (request.type === "PERSONAL_GET_LLM_LOGS") return admin().llmLogs()
+  if (request.type === "PERSONAL_SET_LOCAL_AI_ENABLED") {
+    if (isBuiltinApiModel(request.modelId)) {
+      if (request.enabled) {
+        const model = BUILTIN_API_MODELS.find((candidate) => candidate.id === request.modelId)!
+        const health = await builtinApiHealth(model.id)
+        if (health.status !== "ready") throw new Error(health.detail || "Enter the API key in the extension UI")
+        const current = await admin().aiSettings()
+        if (current.localModelId && current.localModelEnabled) {
+          await admin().setLocalAiEnabled(false, current.localModelId)
+        }
+        await chrome.storage.local.set({ [API_MODEL_STORAGE_KEY]: request.modelId })
+      } else {
+        await chrome.storage.local.remove(API_MODEL_STORAGE_KEY)
+      }
+      return aiSettingsView()
+    }
+    if (request.enabled) await chrome.storage.local.remove(API_MODEL_STORAGE_KEY)
+    return aiSettingsView(await admin().setLocalAiEnabled(request.enabled, request.modelId))
+  }
+  if (request.type === "PERSONAL_CONFIGURE_API_MODEL") {
+    await configureBuiltinApiModel(request)
+    const current = await admin().aiSettings()
+    if (current.localModelId && current.localModelEnabled) {
+      await admin().setLocalAiEnabled(false, current.localModelId)
+    }
+    await chrome.storage.local.set({ [API_MODEL_STORAGE_KEY]: request.modelId })
+    return aiSettingsView()
+  }
+  if (request.type === "PERSONAL_REMOVE_API_MODEL") {
+    const model = BUILTIN_API_MODELS.find((candidate) => candidate.id === request.modelId)
+    await removeBuiltinApiModel(request.modelId)
+    if (await selectedApiModelId() === request.modelId) {
+      await chrome.storage.local.remove(API_MODEL_STORAGE_KEY)
+    }
+    if (model) {
+      await chrome.permissions.remove({ origins: [`${model.origin}/*`] }).catch(() => false)
+    }
+    return aiSettingsView()
+  }
+  if (request.type === "PERSONAL_AI_MATCH_TRANSFER") {
+    const session = await transferCommand({ type: "GET_TRANSFER" }) as Session
+    if (!session.source) throw new Error("Select a source page before running AI matching")
+    const apiModelId = await selectedApiModelId()
+    const reusableFields = session.source.fields
+      .filter((field) => field.reusable)
+    const candidatePaths = reusableFields.map((field) => `${field.group ? `${field.group} / ` : ""}${field.label}`)
+    const candidates = reusableFields
+      .filter((_field, index) => candidatePaths.indexOf(candidatePaths[index]) === candidatePaths.lastIndexOf(candidatePaths[index]))
+      .map((field) => ({
+        information_path: `${field.group ? `${field.group} / ` : ""}${field.label}`,
+        label_text: field.label,
+        group_text: field.group,
+        type: field.type,
+        value: field.value,
+      }))
+    const sourceKeys = new Map(reusableFields.map((field) => [
+      `${field.group ? `${field.group} / ` : ""}${field.label}`,
+      field.instanceKey,
+    ]))
+    const targets: Extract<TransferCommand, { type: "APPLY_AI_FIELD_MATCHES" }>["targets"] = []
+    for (const target of session.targets) {
+      const actions = target.plan?.actions ?? []
+      const unresolved = actions.filter((action) => action.status === "unmapped")
+      if (!unresolved.length) continue
+      const matchingContext = actions.filter((action) =>
+        action.status === "unmapped" || Boolean(action.sourceInstanceKey))
+      const matchingControlIds = new Set(matchingContext.map((action) => action.field.instanceKey))
+      const allTargetControls = actions.map((action) => ({
+        control_id: action.field.instanceKey,
+        tag: "",
+        type: action.field.type,
+        role: "",
+        name: "",
+        label: action.field.label,
+        label_text: action.field.label,
+        group_text: action.field.group,
+        placeholder: "",
+        required: action.field.required,
+        disabled: false,
+        current_value: action.field.value,
+        checked: null,
+        options: action.field.options,
+      }))
+      const matchingControls = allTargetControls.filter((control) => matchingControlIds.has(control.control_id))
+      const controls = unresolved.map((action) => ({
+        control_id: action.field.instanceKey,
+        tag: "",
+        type: action.field.type,
+        role: "",
+        name: "",
+        label: action.field.label,
+        label_text: action.field.label,
+        group_text: action.field.group,
+        placeholder: "",
+        required: action.field.required,
+        disabled: false,
+        current_value: action.field.value,
+        checked: null,
+        options: action.field.options,
+      }))
+      const matches = apiModelId
+        ? await matchFieldsWithBuiltinApi({
+            modelId: apiModelId,
+            target: target.title,
+            controls,
+            allTargetControls: matchingControls,
+            candidates,
+          })
+        : await admin().matchLocalFields({
+            target: target.title,
+            controls,
+            allTargetControls: matchingControls,
+            candidates,
+          })
+      targets.push({
+        targetId: target.id,
+        mappings: matches.flatMap((match) => {
+          const sourceInstanceKey = sourceKeys.get(match.information_path)
+          return sourceInstanceKey ? [{ targetInstanceKey: match.control_id, sourceInstanceKey }] : []
+        }),
+      })
+    }
+    if (!targets.length) throw new Error("No unresolved fields are available for AI matching")
+    return transferCommand({ type: "APPLY_AI_FIELD_MATCHES", targets })
+  }
+  if (request.type === "TRANSFER") return transferCommand(request.command)
+  if (request.type === "TRANSFER_TAB_READY") return transferTabReady(request.tabId)
+  if (request.type === "TRANSFER_INVALIDATE_TAB") return invalidateTransferTab(request.tabId)
+  throw new Error("Unsupported workspace request")
+}
+
+chrome.runtime.onMessage.addListener((request: WorkerRequest, _sender, sendResponse) => {
+  void handleWorkspaceRequest(request)
+    .then((data) => sendResponse({ ok: true, data } satisfies WorkerResponse<unknown>))
+    .catch(async (error) => {
+      await reportRuntimeError(error, request.type).catch(() => undefined)
+      sendResponse({ ok: false, error: errorMessage(error) } satisfies WorkerResponse<never>)
+    })
+  return true
+})
