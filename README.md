@@ -33,6 +33,8 @@ All model options are selectable. Selecting an API model reveals only that provi
 
 ## Extension screenshots
 
+Includes ZeroKey Profile (when you don't use AI) and AI ZeroKey Profile. Use either.
+
 ### Side Panel profiles
 
 ![RekeyZero Personal Side Panel showing ZeroKey Profile and AI ZeroKey Profile controls](docs/images/rekeyzero-side-panel.png)
