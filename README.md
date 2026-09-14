@@ -1,6 +1,6 @@
 # RekeyZero
 
-![RekeyZero — stop re-keying data between web applications](docs/images/rekeyzero-hero.jpg)
+![RekeyZero — stop re-keying data between web applications](docs/images/rekeyzero-hero.svg)
 
 **Stop re-keying data between web applications.**
 
@@ -129,33 +129,6 @@ Then:
 4. Select `dist/rekeyzero-personal`.
 
 Later builds overwrite the same directory. Click **Reload** on the installed extension to pick up changes.
-
-## Current product
-
-The extension provides two profile workflows in its Side Panel.
-
-### ZeroKey Profile
-
-A ZeroKey Profile is created from one source tab and one or more target tabs. The user maps source fields to target fields and chooses how existing target values are handled:
-
-- fill only when blank;
-- allow overwrite; or
-- never fill the field.
-
-The saved profile contains page and field identities plus mapping policy. It does not contain current source-field values. **Fill** re-observes matching open pages, freezes the current source values for that batch, prepares the target actions, fills supported controls, and verifies the result. **Reset** clears the active batch without deleting the profile.
-
-### AI ZeroKey Profile
-
-An AI ZeroKey Profile uses AI to propose field relationships while retaining the same deterministic, guarded fill executor. AI matching receives field labels, control types, groups, and accepted options; it does not receive source-field values. Accepted mappings are saved as a reusable `ai_fill_setup` Mapping Profile.
-
-The model selector currently supports:
-
-- Qwen2.5 1.5B and Gemma 2 2B through browser-local WebLLM;
-- Gemini through its direct API;
-- DeepSeek through its direct API; and
-- GPT through the OpenAI API, defaulting to `gpt-5.6-terra`.
-
-All model options are selectable. Selecting an API model reveals only that provider's model and API-key inputs. Requests go directly from the extension to the selected provider; there is no RekeyZero proxy. API keys stay only in extension session storage and must be entered again after the browser restarts. **Reset** in API settings restores the provider's default model and clears its API key.
 
 ## Product screenshots
 
