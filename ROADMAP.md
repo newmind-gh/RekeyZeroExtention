@@ -8,7 +8,7 @@
 ## Phase 1 — extension reliability
 
 - Expand deterministic and AI-assisted field-matching fixtures
-- Add direct-provider contract tests for supported Gemini and DeepSeek models
+- Expand direct-provider contract tests for supported Gemini, DeepSeek, and GPT models
 - Add browser acceptance coverage for credential entry, session-only storage, persistence opt-in, and removal
 - Verify optional host-permission lifecycle across provider and page origins
 

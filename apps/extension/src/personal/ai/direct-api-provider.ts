@@ -12,7 +12,7 @@ import type { ModelHealth, ModelRequest, ModelResult, PersonalModelProvider } fr
 export type BuiltinApiModelDefinition = {
   id: string
   displayName: string
-  provider: "gemini" | "deepseek"
+  provider: "gemini" | "deepseek" | "openai"
   defaultModel: string
   origin: string
 }
@@ -38,6 +38,13 @@ export const BUILTIN_API_MODELS: BuiltinApiModelDefinition[] = [
     provider: "deepseek",
     defaultModel: "deepseek-v4-flash",
     origin: "https://api.deepseek.com",
+  },
+  {
+    id: "personal-gpt-api-v1",
+    displayName: "GPT",
+    provider: "openai",
+    defaultModel: "gpt-5.6-terra",
+    origin: "https://api.openai.com",
   },
 ]
 
@@ -75,10 +82,16 @@ export function builtinApiModel(modelId: string): BuiltinApiModelDefinition {
 
 export async function builtinApiModelConfig(modelId: string): Promise<BuiltinApiModelConfig> {
   const definition = builtinApiModel(modelId)
-  const stored = (await storedConfigs())[modelId]
+  const configs = await storedConfigs()
+  const stored = configs[modelId]
+  if (stored?.rememberKey) {
+    await setProviderKeyPersistence(definition.id, definition.origin, false)
+    stored.rememberKey = false
+    await chrome.storage.local.set({ [API_CONFIG_STORAGE_KEY]: configs })
+  }
   return {
     model: stored?.model ?? definition.defaultModel,
-    rememberKey: stored?.rememberKey ?? false,
+    rememberKey: false,
     configured: Boolean(stored),
     hasKey: Boolean(await getProviderKey(definition.id, definition.origin)),
   }
@@ -201,14 +214,22 @@ export class DirectApiProvider implements PersonalModelProvider {
       return content
     }
 
-    const response = await fetch(`${this.definition.origin}/chat/completions`, {
+    const response = await fetch(`${this.definition.origin}${this.definition.provider === "openai" ? "/v1" : ""}/chat/completions`, {
       method: "POST",
       signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify(this.definition.provider === "openai" ? {
+        model: this.configuredModel,
+        max_completion_tokens: Math.max(maxTokens, 1024),
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: instructedSystem },
+          { role: "user", content: input },
+        ],
+      } : {
         model: this.configuredModel,
         temperature: 0,
         max_tokens: Math.max(maxTokens, 1024),
@@ -226,7 +247,7 @@ export class DirectApiProvider implements PersonalModelProvider {
     }
     const content = payload.choices?.[0]?.message?.content ?? ""
     if (!content) {
-      throw new Error(`DeepSeek returned no content (finish reason: ${payload.choices?.[0]?.finish_reason ?? "unknown"})`)
+      throw new Error(`${this.definition.displayName} returned no content (finish reason: ${payload.choices?.[0]?.finish_reason ?? "unknown"})`)
     }
     return content
   }

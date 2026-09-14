@@ -38,7 +38,7 @@ const request = {
   maxTokens: 512,
 }
 
-describe("direct Gemini and DeepSeek providers", () => {
+describe("direct API providers", () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
     vi.stubGlobal("chrome", {
@@ -105,6 +105,33 @@ describe("direct Gemini and DeepSeek providers", () => {
     expect(JSON.parse(String(options.body))).toMatchObject({ model: "deepseek-test-model" })
   })
 
+  it("calls OpenAI directly with the default GPT model contract", async () => {
+    await configureBuiltinApiModel({
+      modelId: "personal-gpt-api-v1",
+      model: "gpt-5.6-terra",
+      rememberKey: false,
+      apiKey: "openai-user-secret",
+    })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: "{\"decisions\":[]}" }, finish_reason: "stop" }],
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const definition = builtinApiModel("personal-gpt-api-v1")
+    const config = await builtinApiModelConfig(definition.id)
+    const result = await new DirectApiProvider(definition, config.model).completeJson(request)
+
+    expect(result).toMatchObject({ output: { decisions: [] }, modelId: "gpt-5.6-terra" })
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe("https://api.openai.com/v1/chat/completions")
+    expect(options.headers).toMatchObject({ Authorization: "Bearer openai-user-secret" })
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      model: "gpt-5.6-terra",
+      max_completion_tokens: 1024,
+      response_format: { type: "json_object" },
+    })
+  })
+
   it("removes the configured model and credential", async () => {
     await configureBuiltinApiModel({
       modelId: "personal-deepseek-api-v1",
@@ -116,6 +143,7 @@ describe("direct Gemini and DeepSeek providers", () => {
     await removeBuiltinApiModel("personal-deepseek-api-v1")
 
     await expect(builtinApiModelConfig("personal-deepseek-api-v1")).resolves.toMatchObject({
+      model: "deepseek-v4-flash",
       configured: false,
       hasKey: false,
     })

@@ -42,7 +42,6 @@ export function TransferPanel() {
   const [apiProviderId, setApiProviderId] = useState("")
   const [apiModelName, setApiModelName] = useState("")
   const [apiKey, setApiKey] = useState("")
-  const [rememberApiKey, setRememberApiKey] = useState(false)
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false)
   const syncApiDraft = (settings: PersonalAiSettingsView, preferredId?: string | null) => {
     const models = settings.apiModels ?? []
@@ -52,7 +51,6 @@ export function TransferPanel() {
     if (!selected) return
     setApiProviderId(selected.id)
     setApiModelName(selected.model)
-    setRememberApiKey(selected.rememberKey)
     setApiKey("")
   }
   const run = async (value: Command, section: "profile" | "ai-fill" = "profile") => {
@@ -325,7 +323,7 @@ export function TransferPanel() {
   const setAiModelEnabled = async (modelId: string, enabled: boolean) => {
     const isApiModel = Boolean(localAi?.apiModels?.some((model) => model.id === modelId))
     setBusy(true); setAiFillError(""); setFillSetupStatus(enabled ? (isApiModel ? "Checking API model…" : "Downloading and loading Local AI…") : "")
-    if (localAi) setLocalAi({ ...localAi, localModelId: modelId, localModelEnabled: enabled, localModelStatus: enabled ? "loading" : localAi.localModelStatus })
+    if (localAi) setLocalAi({ ...localAi, selectedModelId: enabled ? modelId : null, localModelId: modelId, localModelEnabled: enabled, localModelStatus: enabled ? "loading" : localAi.localModelStatus })
     try {
       const updated = await worker<PersonalAiSettingsView>({ type: "PERSONAL_SET_LOCAL_AI_ENABLED", enabled, modelId })
       setLocalAi(updated)
@@ -347,9 +345,19 @@ export function TransferPanel() {
     if (!selected) return
     setApiProviderId(selected.id)
     setApiModelName(selected.model)
-    setRememberApiKey(selected.rememberKey)
     setApiKey("")
     setAiFillError("")
+  }
+  const selectAiModel = (modelId: string) => {
+    const apiModel = localAi?.apiModels?.find((model) => model.id === modelId)
+    if (!apiModel) {
+      void setAiModelEnabled(modelId, true)
+      return
+    }
+    selectApiProvider(modelId)
+    setApiSettingsOpen(true)
+    setLocalAi((current) => current ? { ...current, selectedModelId: modelId } : current)
+    if (apiModel.status === "ready") void setAiModelEnabled(modelId, true)
   }
   const saveApiProvider = async () => {
     const selected = localAi?.apiModels?.find((model) => model.id === apiProviderId)
@@ -370,7 +378,7 @@ export function TransferPanel() {
         type: "PERSONAL_CONFIGURE_API_MODEL",
         modelId: selected.id,
         model: apiModelName.trim(),
-        rememberKey: rememberApiKey,
+        rememberKey: false,
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
       })
       setLocalAi(updated)
@@ -381,17 +389,22 @@ export function TransferPanel() {
       setFillSetupStatus("")
     } finally { setBusy(false) }
   }
-  const removeApiProvider = async () => {
+  const resetApiProvider = async () => {
     const selected = localAi?.apiModels?.find((model) => model.id === apiProviderId)
-    if (!selected || !confirm(`Remove the saved ${selected.displayName} configuration and API key?`)) return
+    if (!selected || !confirm(`Reset the saved ${selected.displayName} configuration and API key?`)) return
     setBusy(true); setAiFillError(""); setFillSetupStatus("")
     try {
       const updated = await worker<PersonalAiSettingsView>({ type: "PERSONAL_REMOVE_API_MODEL", modelId: selected.id })
-      setLocalAi(updated)
+      setLocalAi({
+        ...updated,
+        selectedModelId: selected.id,
+        localModelId: selected.id,
+        localModelEnabled: false,
+      })
       syncApiDraft(updated, selected.id)
-      setFillSetupStatus(`${selected.displayName} configuration was removed.`)
+      setFillSetupStatus(`${selected.displayName} was reset to its default model and its API key was cleared.`)
     } catch (caught) {
-      setAiFillError(caught instanceof Error ? caught.message : "Unable to remove the API provider")
+      setAiFillError(caught instanceof Error ? caught.message : "Unable to reset the API provider")
     } finally { setBusy(false) }
   }
   const beginProfileEditor = (current: Session = session!, name = "") => {
@@ -532,6 +545,7 @@ export function TransferPanel() {
   )
   const profileSessionError = activeSessionIsAiFill ? "" : session?.error ?? ""
   const aiFillSessionError = activeSessionIsAiFill ? session?.error ?? "" : ""
+  const selectedApiModel = localAi?.apiModels?.find((model) => model.id === localAi.selectedModelId)
   return <main className="transfer-panel">
     <header className="transfer-header">
       <h1>RekeyZero Personal</h1>
@@ -564,9 +578,9 @@ export function TransferPanel() {
       {fillSetupStatus && <p className="fill-setup-status" role="status">{fillSetupStatus}</p>}
       <select
         aria-label="AI Model"
-        value={localAi?.localModelEnabled ? localAi.localModelId ?? "" : ""}
+        value={localAi?.selectedModelId ?? ""}
         disabled={busy || !localAi}
-        onChange={(event) => { if (event.target.value) void setAiModelEnabled(event.target.value, true) }}
+        onChange={(event) => { if (event.target.value) selectAiModel(event.target.value) }}
       >
         <option value="" disabled>Select AI Model</option>
         {localAi?.localModels.map((model) => {
@@ -589,26 +603,21 @@ export function TransferPanel() {
                     : model.status === "failed"
                       ? "Not ready"
                       : "Not downloaded"
-          return <option key={model.id} value={model.id} disabled={!model.runtimeAvailable}>
+          return <option key={model.id} value={model.id}>
             {displayName}{model.experimental ? " · Experimental" : ""}{status ? ` · ${status}` : ""}
           </option>
         })}
       </select>
-      <details className="api-provider-config" open={apiSettingsOpen} onToggle={(event) => setApiSettingsOpen(event.currentTarget.open)}>
-        <summary>Gemini / DeepSeek API settings</summary>
-        <p className="help">Enter your own API key. Requests go directly from the extension to the selected provider; no RekeyZero backend service is used. AI matching sends field labels, control types, and accepted options, but not source field values.</p>
-        <label>API provider<select aria-label="API provider" value={apiProviderId} disabled={busy} onChange={(event) => selectApiProvider(event.target.value)}>
-          {localAi?.apiModels?.map((model) => <option key={model.id} value={model.id}>{model.displayName}{model.status === "ready" ? " · Configured" : ""}</option>)}
-        </select></label>
-        <label>Model<input aria-label="API model name" value={apiModelName} disabled={busy} onChange={(event) => setApiModelName(event.target.value)} /></label>
-        <label>API key<input aria-label="API key" type="password" autoComplete="off" value={apiKey} disabled={busy} placeholder={localAi?.apiModels?.find((model) => model.id === apiProviderId)?.hasKey ? "Leave blank to keep the saved key" : "Enter API key"} onChange={(event) => setApiKey(event.target.value)} /></label>
-        <label className="api-key-persistence"><input type="checkbox" checked={rememberApiKey} disabled={busy} onChange={(event) => setRememberApiKey(event.target.checked)} />Remember this key on this device</label>
-        <p className="help">Without Remember, the key stays only in extension session storage and must be entered again after the browser restarts. Remembered keys persist in the browser profile and are not encrypted by RekeyZero.</p>
+      {selectedApiModel && <details className="api-provider-config" open={apiSettingsOpen} onToggle={(event) => setApiSettingsOpen(event.currentTarget.open)}>
+        <summary>API settings</summary>
+        <label>{selectedApiModel.displayName} model<input aria-label={`${selectedApiModel.displayName} model`} value={apiModelName} disabled={busy} onChange={(event) => setApiModelName(event.target.value)} /></label>
+        <label>{selectedApiModel.displayName} key<input aria-label={`${selectedApiModel.displayName} key`} type="password" autoComplete="off" value={apiKey} disabled={busy} placeholder={selectedApiModel.hasKey ? "Leave blank to keep the saved key" : "Enter API key"} onChange={(event) => setApiKey(event.target.value)} /></label>
+        <p className="help">The key stays only in extension session storage and must be entered again after the browser restarts.</p>
         <div className="api-provider-actions">
           <button disabled={busy || !apiProviderId || !apiModelName.trim()} onClick={() => void saveApiProvider()}>Save and select</button>
-          <button className="secondary" disabled={busy || !localAi?.apiModels?.find((model) => model.id === apiProviderId)?.configured} onClick={() => void removeApiProvider()}>Remove</button>
+          <button className="secondary" disabled={busy || !selectedApiModel.configured} onClick={() => void resetApiProvider()}>Reset</button>
         </div>
-      </details>
+      </details>}
       <select aria-label="AI Transfer Profile" value={selectedFillSetupId} disabled={disabled} onChange={(event) => setSelectedFillSetupId(event.target.value)}><option value="" disabled>{fillSetups.length ? "Select a profile" : "No profiles available"}</option>{fillSetups.map((setup) => <option key={setup.id} value={setup.id}>{setup.name}</option>)}</select>
       <button disabled={disabled} onClick={startCreateFillSetup}>Create Profile</button>
       <button disabled={disabled || !selectedFillSetupId} onClick={openFillSetup}>Open Profile</button>

@@ -52,7 +52,7 @@ New information never silently overwrites the current validated revision. Reusab
 
 RekeyZero provides a Personal Chromium Manifest V3 extension. It uses browser IndexedDB for primary storage and deterministic matching with an optional browser-local model.
 
-The Personal build can also call Gemini or DeepSeek directly with a model name and API key entered by the user in the extension UI. External AI is optional; no RekeyZero backend proxies or stores these requests.
+The Personal build can also call Gemini, DeepSeek, or GPT directly with a model name and API key entered by the user in the extension UI. External AI is optional; no RekeyZero backend proxies or stores these requests.
 
 A RekeyZero-hosted cloud service is not required.
 

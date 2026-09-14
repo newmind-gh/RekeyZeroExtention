@@ -57,7 +57,7 @@ export type PersonalAiSettingsView = {
   apiModels?: Array<{
     id: string
     displayName: string
-    provider: "gemini" | "deepseek"
+    provider: "gemini" | "deepseek" | "openai"
     origin: string
     model: string
     status: "ready" | "not_ready"

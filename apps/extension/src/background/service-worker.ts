@@ -102,7 +102,7 @@ async function aiSettingsView(base?: PersonalAiSettingsView): Promise<PersonalAi
       id: model.id,
       displayName: `${model.displayName} · API`,
       modelArtifact: modelHealth.model ? `${modelHealth.model} · direct API` : "",
-      runtimeAvailable: modelHealth.status === "ready",
+      runtimeAvailable: true,
       experimental: false,
       status: modelHealth.status,
       detail: modelHealth.detail,
