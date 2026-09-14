@@ -1,8 +1,134 @@
 # RekeyZero
 
-RekeyZero is a Personal Chromium extension for safely reusing information from one open web page across one or more target pages. The current product is extension-first: it stores Mapping Profiles locally, prepares guarded fill plans, writes supported form controls, and leaves final review and submission to the user.
+![RekeyZero — stop re-keying data between web applications](docs/images/rekeyzero-hero.jpg)
 
-This repository also contains a standalone web application source and synthetic browser-test pages. It does not include a RekeyZero backend, server-managed AI credentials, or a local-model service.
+**Stop re-keying data between web applications.**
+
+RekeyZero is an open-source Chromium extension for safely reusing information from one open web page across one or more target pages. Create reusable Mapping Profiles, fill supported controls through a guarded deterministic executor, review the result, and submit manually.
+
+AI is optional. When enabled, it can propose field relationships, but it does not control the browser, execute arbitrary JavaScript or selectors, or submit forms for you.
+
+> **AI maps. RekeyZero fills. You review and submit.**
+
+![RekeyZero Personal Side Panel showing a saved AI ZeroKey Profile with validated field matches](docs/images/rekeyzero-ai-profile-saved.png)
+
+## What RekeyZero does
+
+A typical RekeyZero workflow looks like this:
+
+```text
+Source web app
+     │
+     │ observe current fields and values
+     ▼
+Mapping Profile
+     │
+     ├── map fields manually
+     │        or
+     └── let AI propose field relationships
+              │
+              ▼
+     deterministic validation
+              │
+              ▼
+        guarded fill plan
+              │
+              ▼
+        target web app(s)
+              │
+              ▼
+       review and submit
+```
+
+For example, a reusable profile might map:
+
+```text
+Customer Name   → Applicant Name
+Company         → Business Name
+Street Address  → Address
+Postcode        → Postal Code
+```
+
+The profile stores page and field identities plus mapping policy. It does **not** store the current source-field values. Each **Fill** re-observes the matching open pages and uses the current source data for that transfer batch.
+
+## Why RekeyZero
+
+### Deterministic execution
+
+AI can help determine which fields correspond to each other, but accepted mappings are executed by the same guarded, deterministic fill engine used by non-AI profiles.
+
+RekeyZero does not execute arbitrary model-generated JavaScript or selectors, does not perform unattended navigation, and does not perform final submission.
+
+### User-controlled filling
+
+For each mapped target field, a profile can specify whether RekeyZero should:
+
+- fill only when the field is blank;
+- allow overwrite; or
+- never fill the field.
+
+Stale or changed page state invalidates prepared actions, and unsupported or ambiguous operations stop for user review.
+
+### Browser-local product state
+
+RekeyZero does not require a RekeyZero backend. Durable product state is kept in browser IndexedDB. Active transfer batches and API keys use extension session storage.
+
+### AI is optional
+
+Use **ZeroKey Profile** for fully manual field mapping, or **AI ZeroKey Profile** to ask a model to propose field relationships.
+
+AI matching receives field labels, control types, groups, and accepted options. It does not receive current source-field values.
+
+Current model options include:
+
+- Qwen2.5 1.5B and Gemma 2 2B through browser-local WebLLM;
+- Gemini through its direct API;
+- DeepSeek through its direct API; and
+- GPT through the OpenAI API, defaulting to `gpt-5.6-terra`.
+
+For API models, requests go directly from the extension to the selected provider. There is no RekeyZero proxy. API keys remain in extension session storage and must be entered again after the browser restarts.
+
+## Quick start
+
+### Requirements
+
+- Node.js 22 or newer
+- npm
+- Chrome, Edge, or another compatible Chromium browser version 124 or newer
+- WebGPU support when using a browser-local model
+
+### Set up the repository
+
+From the repository root on Windows:
+
+```powershell
+.\setup.ps1
+```
+
+The setup script installs dependencies for the extension and web application, runs extension tests and checks, and checks the web application. No Python environment, FastAPI service, Ollama instance, or repository `.env` file is required for the Personal extension.
+
+### Build and load the extension
+
+```powershell
+cd apps\extension
+npm ci
+npm run build
+```
+
+The stable unpacked build is written to:
+
+```text
+dist/rekeyzero-personal
+```
+
+Then:
+
+1. Open `chrome://extensions` or `edge://extensions`.
+2. Enable **Developer mode**.
+3. Choose **Load unpacked**.
+4. Select `dist/rekeyzero-personal`.
+
+Later builds overwrite the same directory. Click **Reload** on the installed extension to pick up changes.
 
 ## Current product
 
@@ -31,9 +157,7 @@ The model selector currently supports:
 
 All model options are selectable. Selecting an API model reveals only that provider's model and API-key inputs. Requests go directly from the extension to the selected provider; there is no RekeyZero proxy. API keys stay only in extension session storage and must be entered again after the browser restarts. **Reset** in API settings restores the provider's default model and clears its API key.
 
-## Extension screenshots
-
-Includes ZeroKey Profile (when you don't use AI) and AI ZeroKey Profile. Use either.
+## Product screenshots
 
 ### Side Panel profiles
 
@@ -80,33 +204,6 @@ RekeyZero is designed for user-supervised form filling:
 
 The extension keeps durable product state in browser IndexedDB. Active transfer batches and API keys use extension session storage.
 
-## Requirements
-
-- Node.js 22 or newer
-- npm
-- Chrome, Edge, or another compatible Chromium browser version 124 or newer
-- WebGPU support when using a browser-local model
-
-## Repository setup
-
-From the repository root on Windows:
-
-```powershell
-.\setup.ps1
-```
-
-The setup script installs dependencies for the extension and web application, runs extension tests and checks, and checks the web application. No Python environment, FastAPI service, Ollama instance, or repository `.env` file is required for the Personal extension.
-
-## Build and load the extension
-
-```powershell
-cd apps\extension
-npm ci
-npm run build
-```
-
-The stable unpacked build is written to `dist/rekeyzero-personal` at the repository root. In `chrome://extensions` or `edge://extensions`, enable Developer mode and load that directory with **Load unpacked**. Later builds overwrite the same directory; click **Reload** on the installed extension to pick up changes.
-
 ## Development and validation
 
 From `apps/extension`:
@@ -150,6 +247,8 @@ tests/extension-portal/  Synthetic pages used by extension tests
 ```
 
 The Personal extension and synthetic test pages do not depend on `apps/web`.
+
+This repository also contains a standalone web application source and synthetic browser-test pages. It does not include a RekeyZero backend, server-managed AI credentials, or a local-model service.
 
 ## Current limitations
 
