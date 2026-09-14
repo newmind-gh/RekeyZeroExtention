@@ -132,6 +132,8 @@ Later builds overwrite the same directory. Click **Reload** on the installed ext
 
 ## Product screenshots
 
+RekeyZero supports both **non-AI** and **AI-enabled** workflows. Use **ZeroKey Profile** when you do not want to use AI and prefer to map fields manually. Use **AI ZeroKey Profile** when you want AI to propose field matches; the accepted mappings still use the same guarded, deterministic fill executor.
+
 ### Side Panel profiles
 
 ![RekeyZero Personal Side Panel showing ZeroKey Profile and AI ZeroKey Profile controls](docs/images/rekeyzero-side-panel.png)
