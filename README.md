@@ -1,157 +1,114 @@
 # RekeyZero
 
-This repository contains the browser extension, supporting web sources, and the synthetic test-page server. It does not include a FastAPI backend, server-managed Gemini/DeepSeek credentials, or an Ollama bridge.
+RekeyZero is a Personal Chromium extension for safely reusing information from one open web page across one or more target pages. The current product is extension-first: it stores Mapping Profiles locally, prepares guarded fill plans, writes supported form controls, and leaves final review and submission to the user.
 
-**Get information once. Understand it once. Use it everywhere.**
+This repository also contains a standalone web application source and synthetic browser-test pages. It does not include a RekeyZero backend, server-managed AI credentials, or a local-model service.
 
-RekeyZero is an information-reuse layer for business workflows. It turns incoming information into a reviewable, versioned Information Record and then helps users reuse validated information across downstream systems without repeatedly re-keying the same facts.
+## Current product
 
-> **If RekeyZero already knows a fact, a human should not have to type it again.**
+The extension provides two profile workflows in its Side Panel.
 
-## What RekeyZero does
+### ZeroKey Profile
 
-RekeyZero is built around a simple flow:
+A ZeroKey Profile is created from one source tab and one or more target tabs. The user maps source fields to target fields and chooses how existing target values are handled:
 
-```text
-Sources / files / forms
-        ↓
-Intake + original assets
-        ↓
-Information understanding
-        ↓
-Pending Information Revision
-        ↓
-Human validation
-        ↓
-Validated Information
-        ↓
-Destination preparation
-        ↓
-Human confirmation
-        ↓
-API / browser / email / file execution
-        ↓
-Destination response
-        ↓
-Optional new pending revision
-```
+- fill only when blank;
+- allow overwrite; or
+- never fill the field.
 
-Key concepts:
+The saved profile contains page and field identities plus mapping policy. It does not contain current source-field values. **Fill** re-observes matching open pages, freezes the current source values for that batch, prepares the target actions, fills supported controls, and verifies the result. **Reset** clears the active batch without deleting the profile.
 
-- **Information Record** — a long-lived container for reusable business or personal information.
-- **Information Revision** — a versioned candidate or validated set of information.
-- **Validated Information** — the information eligible for record-driven downstream composition; fill-only page batches use separate, explicitly authorized session snapshots.
-- **Evidence** — provenance and source context associated with extracted information.
-- **Destination** — a configured downstream API, web portal, email or document/file target.
-- **Action / Execution** — a prepared destination operation and the resulting execution.
-- **Destination Response** — the captured result of an execution, retained separately from validated information.
+### AI ZeroKey Profile
 
-New information never silently overwrites the current validated revision. Reusable facts returned by a destination become a new pending revision and require review before they can be reused.
+An AI ZeroKey Profile uses AI to propose field relationships while retaining the same deterministic, guarded fill executor. AI matching receives field labels, control types, groups, and accepted options; it does not receive source-field values. Accepted mappings are saved as a reusable `ai_fill_setup` Mapping Profile.
 
-## Deployment profile
+The model selector currently supports:
 
-RekeyZero provides a Personal Chromium Manifest V3 extension. It uses browser IndexedDB for primary storage and deterministic matching with an optional browser-local model.
+- Qwen2.5 1.5B and Gemma 2 2B through browser-local WebLLM;
+- Gemini through its direct API;
+- DeepSeek through its direct API; and
+- GPT through the OpenAI API, defaulting to `gpt-5.6-terra`.
 
-The Personal build can also call Gemini, DeepSeek, or GPT directly with a model name and API key entered by the user in the extension UI. External AI is optional; no RekeyZero backend proxies or stores these requests.
+All model options are selectable. Selecting an API model reveals only that provider's model and API-key inputs. Requests go directly from the extension to the selected provider; there is no RekeyZero proxy. API keys stay only in extension session storage and must be entered again after the browser restarts. **Reset** in API settings restores the provider's default model and clears its API key.
 
-A RekeyZero-hosted cloud service is not required.
+## Extension screenshots
 
-## Safety and human control
+### Side Panel profiles
 
-RekeyZero is designed to automate repetitive transfer of information without giving a model unrestricted browser authority.
+![RekeyZero Personal Side Panel showing ZeroKey Profile and AI ZeroKey Profile controls](docs/images/rekeyzero-side-panel.png)
 
-- only validated information is eligible for record-driven destination composition;
-- the browser extension never performs consequential final submission;
-- browser execution uses a constrained action set tied to the current page state;
-- stale or changed page state invalidates the prepared fill plan;
-- uncertain or unsupported behavior becomes an exception / **Human Required** state;
-- password fields are not captured or filled;
+### AI ZeroKey Profile editor
+
+![RekeyZero AI ZeroKey Profile editor showing source and target selection](docs/images/rekeyzero-ai-profile-editor.png)
+
+## ReKeyZero Admin
+
+The Side Panel gear button opens the extension-owned Admin page. Its current sections are:
+
+- **Profiles** — view, edit, and delete standard ZeroKey Profiles;
+- **AI Setups** — view, edit, and delete AI ZeroKey Profiles;
+- **Log** — inspect local AI requests, raw response attempts, parsed mappings, validation results, and runtime errors; and
+- **Privacy** — export browser-local admin data or diagnostics and clear local RekeyZero data.
+
+## Safety and privacy
+
+RekeyZero is designed for user-supervised form filling:
+
+- final submission remains manual;
+- website and AI-provider host access is optional and requested when needed;
+- password fields are excluded from observation, AI context, and fill;
 - CAPTCHA and MFA are not bypassed;
-- arbitrary model-generated JavaScript or selectors are not executed;
-- destructive or ambiguous actions are not executed automatically;
-- destination submission remains a manual action on each target website.
+- arbitrary model-generated JavaScript and selectors are never executed;
+- stale or changed page state invalidates prepared actions;
+- existing target values are preserved unless the profile explicitly permits overwrite;
+- unsupported or ambiguous operations stop for user review; and
+- API keys, information values, profile mappings, page text, and provider response bodies are excluded from diagnostics.
 
-## Main capabilities
+The extension keeps durable product state in browser IndexedDB. Active transfer batches and API keys use extension session storage.
 
-### Information intake and review
+## Requirements
 
-RekeyZero can create Information Records from configured sources and direct intake such as files, text/JSON, forms and other supported connectors. Original assets are retained so extracted information can be reviewed against source evidence.
-
-Information structures can be generated for the incoming information or use a predefined schema. Users review and correct pending revisions before marking information as validated.
-
-### Browser extension and Side Panel
-
-`apps/extension` contains the Personal extension.
-
-The Side Panel is a non-AI, fill-only batch transfer task that pins one source page, selects multiple
-open target tabs, protects existing values, and checks each result. Its temporary
-source snapshot is separate from validated Information Records. See `apps/extension/README.md` for supported controls and recovery.
-
-Non-technical users can create multiple Mapping Profiles from one open source and multiple open target
-page types. A saved profile contains page-template identities, field relationships, and existing-value
-policies—not customer or current field values. The Side Panel selects the first saved profile by default;
-**Open Profile** supports editing, saving, or deleting that selection, while **Fill** performs both the
-prepare and fill steps in one action.
-
-The extension keeps its information and workflow state in the browser and does not require a RekeyZero server.
-
-## Getting started
-
-### Requirements
-
-For the current Windows reference development setup:
-
-- Node.js 22+
+- Node.js 22 or newer
 - npm
-- a supported Chromium-based browser
+- Chrome, Edge, or another compatible Chromium browser version 124 or newer
+- WebGPU support when using a browser-local model
 
-The extension declares Chrome/Chromium 124+. Local AI additionally requires a browser/device with WebGPU support.
+## Repository setup
 
-### Set up the repository
-
-From the repository root:
+From the repository root on Windows:
 
 ```powershell
 .\setup.ps1
 ```
 
-The setup installs and checks the extension and supporting web packages. No Python environment or local model service is required.
+The setup script installs dependencies for the extension and web application, runs extension tests and checks, and checks the web application. No Python environment, FastAPI service, Ollama instance, or repository `.env` file is required for the Personal extension.
 
-## Build the browser extension
+## Build and load the extension
 
 ```powershell
 cd apps\extension
 npm ci
-```
-
-```powershell
 npm run build
 ```
 
-Build output is written to `dist/rekeyzero-personal`. Load that directory from the browser's extensions page. `apps/extension/dist` is not used.
+The stable unpacked build is written to `dist/rekeyzero-personal` at the repository root. In `chrome://extensions` or `edge://extensions`, enable Developer mode and load that directory with **Load unpacked**. Later builds overwrite the same directory; click **Reload** on the installed extension to pick up changes.
 
-## Repository layout
-
-```text
-apps/web/          Demo Workspace web source (requires an external compatible API)
-apps/extension/    Personal browser extension
-tests/extension-portal/ Synthetic pages used for extension validation
-```
-
-## Development and testing
-
-The repository contains frontend and Personal browser-extension tests.
+## Development and validation
 
 From `apps/extension`:
 
 ```powershell
 npm run check
 npm test
+npx playwright install chromium
+npm run test:e2e
 ```
 
-Browser end-to-end tests are also available through the extension package scripts. See `CONTRIBUTING.md` for contribution guidance.
+The manually triggered GitHub Actions workflow checks the web application, checks and tests the extension, runs the Chromium end-to-end suite, scans the release, and uploads the generated release candidates as a workflow artifact.
 
-Run the deterministic browser test and create a release candidate from a clean committed source state:
+## Release package
+
+Create a release candidate from a clean committed source state:
 
 ```powershell
 cd apps\extension
@@ -159,22 +116,40 @@ npm run test:e2e
 npm run release
 ```
 
-The release command writes the ZIP and its verification manifest to the repository-level `dist/` directory. Real-Chrome validation must install the unpacked contents of that exact ZIP, record its SHA-256, and restart from release generation whenever product source changes.
+The release command writes the following repository-level outputs:
 
-## Privacy and security
+```text
+dist/rekeyzero-personal/
+dist/rekeyzero-personal.zip
+dist/rekeyzero-personal.manifest.json
+```
 
-RekeyZero may process sensitive business or personal information. Do not commit real credentials, customer data or other secrets to the repository or test fixtures.
+The package process records source identity and file hashes, scans for secrets and remote-hosted executable references, and embeds `release-manifest.json` in the ZIP. Product changes require a new package and a new real-browser validation of that exact ZIP.
 
-For security reporting and supported disclosure channels, see [SECURITY.md](SECURITY.md).
+## Repository layout
 
-## Project files
+```text
+apps/extension/          Personal Chromium extension
+apps/web/                Optional operator web UI; requires a compatible external API
+tests/extension-portal/  Synthetic pages used by extension tests
+.github/workflows/       Manually triggered CI and release-candidate workflow
+```
 
+The Personal extension and synthetic test pages do not depend on `apps/web`.
+
+## Current limitations
+
+RekeyZero is DOM-first and does not perform unattended navigation, final submission, post-submit business-response capture, visual Computer Use, or arbitrary model actions. Supported controls include common native inputs, textarea, select, checkbox, grouped radio controls, and explicitly adapted listbox/combobox widgets. Unadapted custom widgets, nested frames, Shadow DOM, PDFs, and canvas are not filled.
+
+Real customer portals require acceptance testing for site-specific autosave, delayed validation, custom controls, and server-side persistence behavior.
+
+## Project documentation
+
+- [Extension details](apps/extension/README.md)
+- [Web application](apps/web/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Support](SUPPORT.md)
-- [Maintainers](MAINTAINERS.md)
-- [Governance](GOVERNANCE.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 

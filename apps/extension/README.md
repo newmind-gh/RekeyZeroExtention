@@ -1,8 +1,8 @@
 # RekeyZero Personal Browser Extension
 
-The Chromium Manifest V3 extension performs deterministic and browser-local-AI-assisted transfers and adds a browser-native ReKeyZero Admin page.
+The Chromium Manifest V3 extension performs deterministic, browser-local-AI-assisted, and direct-provider-AI-assisted transfers and adds a browser-native ReKeyZero Admin page.
 
-Neither extension performs final submission, unattended navigation, or business-response capture.
+The extension does not perform final submission, unattended navigation, or business-response capture.
 
 ## Build and load
 
@@ -107,15 +107,15 @@ Profiles lists the Mapping Profiles used by the Side Panel. Users can open, edit
 
 Page identity metadata remains protected in Admin. Profile names, field relationships, and existing-value policies can be edited there; rebuilding source or target page structure remains in the Side Panel's **Open Profile** flow.
 
-### AI Fill
+### AI ZeroKey Profile
 
-The Personal Side Panel includes an **AI Fill** section below Profile, organized around a Setup dropdown with **Create Setup**, **Open Setup**, **Fill**, and **Reset** actions. Source and target tab selection, optional source and target URLs, and the setup name are contained in the Create/Open Setup editor.
+The Personal Side Panel includes an **AI ZeroKey Profile** section below ZeroKey Profile, organized around a Profile dropdown with **Create Profile**, **Open Profile**, **Fill**, and **Reset** actions. Source and target tab selection, optional source and target URLs, and the profile name are contained in the Create/Open Profile editor.
 
-The model selector contains the available browser-local WebLLM models plus **Gemini · API**, **DeepSeek · API**, and **GPT · API**. Every model option is selectable. Selecting a local model downloads and loads it in the browser. Selecting an API model opens **API settings**, where the user enters the model name and API key. GPT defaults to `gpt-5.6-terra`. The Extension calls the selected provider directly without a RekeyZero backend proxy. Saved setups use the existing Mapping Profile storage with the `ai_fill_setup` kind and the guarded transfer executor. **Fill** runs the selected setup; **Reset** clears only the active batch and retains saved setups.
+The model selector contains the available browser-local WebLLM models plus **Gemini · API**, **DeepSeek · API**, and **GPT · API**. Every model option is selectable. Selecting a local model downloads and loads it in the browser. Selecting an API model shows **API settings** for that provider only, including its model and API-key inputs. GPT defaults to `gpt-5.6-terra`. The extension calls the selected provider directly without a RekeyZero backend proxy. Saved AI profiles use the existing Mapping Profile storage with the `ai_fill_setup` kind and the guarded transfer executor. **Fill** runs the selected profile; the profile-level **Reset** clears only the active batch and retains saved profiles. The API-settings **Reset** restores that provider's default model and clears its API key.
 
-API keys are never read from a repository `.env`. A key stays only in extension session storage and must be entered again after the browser restarts. RekeyZero restricts that storage area to trusted extension contexts. Keys are excluded from normal exports and diagnostics, and removing a provider deletes its stored key and provider host permission. Existing remembered provider keys are migrated to session-only storage when their configuration is loaded.
+API keys are never read from a repository `.env`. A key stays only in extension session storage and must be entered again after the browser restarts. RekeyZero restricts that storage area to trusted extension contexts. Keys are excluded from normal exports and diagnostics. Resetting an API provider deletes its stored key and provider host permission. Existing remembered provider keys are migrated to session-only storage when their configuration is loaded.
 
-Admin → **AI Setups** lists saved AI Fill setups. Model download and enablement are controlled from the Side Panel rather than Admin.
+Admin → **AI Setups** lists saved AI ZeroKey Profiles. Model download and enablement are controlled from the Side Panel rather than Admin.
 
 Admin → **Log** stores each LLM request, every raw response attempt, the parsed response, accepted high-confidence model matches, deterministic exact/curated-label fallback additions, and the final mappings. The complete chronological log is displayed as raw JSON in one scrollable window. These logs stay in the browser. Field matching sends labels and control metadata, not source field values.
 
@@ -127,7 +127,7 @@ Password controls are excluded from observation, model context, and fill.
 
 Optional host permission ownership in Personal is limited to:
 
-- enabled BYO AI provider origins; and
+- configured direct AI-provider origins; and
 - origins referenced by saved Mapping Profiles.
 
 The Personal manifest has no mandatory host permissions. HTTPS provider and website origins, plus localhost fixture origins, remain optional and are requested from the user when needed.
@@ -145,6 +145,7 @@ evidence
 provider_configs
 settings
 transfer_mapping_profiles
+llm_logs
 ```
 
 The following old Personal single-page stores are retired and removed from the current schema:
