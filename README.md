@@ -2,13 +2,13 @@
 
 ![RekeyZero — stop re-keying data between web applications](docs/images/rekeyzero-hero.svg)
 
-**Stop re-keying data between web applications.**
+<h2 align="center">Stop re-keying data between web applications.</h2>
+
+<p align="center"><strong>AI maps. RekeyZero fills. You review and submit.</strong></p>
 
 RekeyZero is an open-source Chromium extension for safely reusing information from one open web page across one or more target pages. Create reusable Mapping Profiles, fill supported controls through a guarded deterministic executor, review the result, and submit manually.
 
 AI is optional. When enabled, it can propose field relationships, but it does not control the browser, execute arbitrary JavaScript or selectors, or submit forms for you.
-
-> **AI maps. RekeyZero fills. You review and submit.**
 
 ![RekeyZero Personal Side Panel showing a saved AI ZeroKey Profile with validated field matches](docs/images/rekeyzero-ai-profile-saved.png)
 
