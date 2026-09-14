@@ -119,6 +119,8 @@ Admin → **AI Setups** lists saved AI ZeroKey Profiles. Model download and enab
 
 Admin → **Log** stores each LLM request, every raw response attempt, the parsed response, accepted high-confidence model matches, deterministic exact/curated-label fallback additions, and the final mappings. The complete chronological log is displayed as raw JSON in one scrollable window. These logs stay in the browser. Field matching sends labels and control metadata, not source field values.
 
+For browser-local WebLLM matching, each Save reads the current page labels and assigns temporary compact target/source IDs (`t1`, `s1`, and so on). The model returns those IDs, and the extension maps them back to the current observed field identities before validation. This avoids asking small local models to repeat long labels, keeps retries within the local context window, and does not depend on labels from an earlier Save. Safe Gemma shape variations, including a single wrapper array, are normalized locally. Conflicting duplicate decisions are reduced to `null` so no uncertain mapping is applied. A failed first response is retried once inside the same Save action. If both responses remain invalid, their raw text is retained in the local runtime-error log for diagnosis.
+
 The old destination-response extraction path is not part of the current product. The extension does not inspect a post-submit business response to create reusable facts.
 
 ### Privacy and host permissions

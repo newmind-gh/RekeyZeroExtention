@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { LOCAL_FIELD_MATCH_PROMPT, localFieldMatchInput } from "./field-match-prompt"
 
 describe("Local AI field-match input", () => {
-  it("renders readable field metadata without values or opaque IDs", () => {
+  it("renders value-free field metadata and a compact local-model view", () => {
     const input = localFieldMatchInput([{
       control_id: "target-instance-key",
       tag: "input",
@@ -39,6 +39,11 @@ describe("Local AI field-match input", () => {
     expect(input.text).not.toContain("source-instance-key")
     expect(input.text).not.toContain("target-instance-key")
     expect(input.text).not.toContain("Example Commerce Group")
+    expect(input.indexedText).toContain("s1: Legal company name | section: Verified business profile [type: text]")
+    expect(input.indexedText).toContain("t1: Registered business | section: Seller details [type: text]")
+    expect(input.indexedText).not.toContain("source-instance-key")
+    expect(input.indexedText).not.toContain("target-instance-key")
+    expect(input.indexedText).not.toContain("Example Commerce Group")
     expect(input.sourceFields[0].identity).toBe("Legal company name | section: Verified business profile")
     expect(input.targetFields[0].identity).toBe("Registered business | section: Seller details")
   })

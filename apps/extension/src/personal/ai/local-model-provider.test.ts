@@ -100,7 +100,7 @@ describe("LocalModelProvider", () => {
     expect(result.output).toEqual({ ok: true })
   })
 
-  it("puts exact field identities into the WebLLM prompt without response_format", async () => {
+  it("uses compact field IDs in the WebLLM prompt without response_format", async () => {
     vi.stubGlobal("navigator", { gpu: {} })
     const createCompletion = vi.fn().mockResolvedValue({
       choices: [{ message: { content: '{"decisions":[{"target":"Registered business | section: Seller details","source":"Legal company name"}]}' } }],
@@ -135,9 +135,10 @@ describe("LocalModelProvider", () => {
 
     const request = createCompletion.mock.calls[0][0]
     expect(request).not.toHaveProperty("response_format")
-    expect(request.messages[0].content).toContain('"Registered business | section: Seller details"')
-    expect(request.messages[0].content).toContain('"Legal company name"')
-    expect(request.messages[0].content).toContain('Use only the keys "decisions", "target", and "source"')
+    expect(request.messages[0].content).toContain("compact IDs t1, t2")
+    expect(request.messages[0].content).toContain('"target":"t1"')
+    expect(request.messages[0].content).toContain('"source":"s1"')
+    expect(request.messages[0].content).not.toContain('"Registered business | section: Seller details"')
   })
 
   it("canonicalizes a single valid field-match object without retrying", async () => {
@@ -186,6 +187,102 @@ describe("LocalModelProvider", () => {
     expect(createCompletion).toHaveBeenCalledTimes(1)
     expect(result.output.decisions).toEqual([
       { target: "Annual revenue | section: Merchant details", source: "Annual turnover" },
+    ])
+  })
+
+  it("canonicalizes compact IDs and common Gemma key names without retrying", async () => {
+    vi.stubGlobal("navigator", { gpu: {} })
+    const raw = '```json\n{"matches":[{"target_id":"t1","source_id":"s1"}]}\n```'
+    const createCompletion = vi.fn().mockResolvedValue({ choices: [{ message: { content: raw } }] })
+    const engine = {
+      chat: { completions: { create: createCompletion } },
+      reload: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    }
+    webLlm.createEngine.mockResolvedValue(engine)
+
+    const result = await new LocalModelProvider("personal-gemma2-2b-it-v1").completeJson<{ decisions: Array<{ target: string; source: string | null }> }>({
+      task: "field_match",
+      system: "Match fields.",
+      input: "Source fields:\n- s1: Annual turnover\nTarget fields:\n- t1: Annual revenue",
+      schema: singleFieldSchema,
+    })
+
+    expect(createCompletion).toHaveBeenCalledTimes(1)
+    expect(result.output.decisions).toEqual([
+      { target: "Annual revenue | section: Merchant details", source: "Annual turnover" },
+    ])
+  })
+
+  it("unwraps Gemma's single-element response array", async () => {
+    vi.stubGlobal("navigator", { gpu: {} })
+    const raw = '```json\n[{"decisions":[{"target":"t1","source":"s1"}]}]\n```'
+    const createCompletion = vi.fn().mockResolvedValue({ choices: [{ message: { content: raw } }] })
+    const engine = {
+      chat: { completions: { create: createCompletion } },
+      reload: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    }
+    webLlm.createEngine.mockResolvedValue(engine)
+
+    const result = await new LocalModelProvider("personal-gemma2-2b-it-v1").completeJson<{ decisions: Array<{ target: string; source: string | null }> }>({
+      task: "field_match",
+      system: "Match fields.",
+      input: "Source fields:\n- s1: Annual turnover\nTarget fields:\n- t1: Annual revenue",
+      schema: singleFieldSchema,
+    })
+
+    expect(createCompletion).toHaveBeenCalledTimes(1)
+    expect(result.output.decisions).toEqual([
+      { target: "Annual revenue | section: Merchant details", source: "Annual turnover" },
+    ])
+  })
+
+  it("fails closed to null when Gemma returns conflicting duplicates", async () => {
+    vi.stubGlobal("navigator", { gpu: {} })
+    const raw = '{"decisions":[{"target":"t1","source":"s1"},{"target":"t1","source":"null"}]}'
+    const createCompletion = vi.fn().mockResolvedValue({ choices: [{ message: { content: raw } }] })
+    const engine = {
+      chat: { completions: { create: createCompletion } },
+      reload: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    }
+    webLlm.createEngine.mockResolvedValue(engine)
+
+    const result = await new LocalModelProvider("personal-gemma2-2b-it-v1").completeJson<{ decisions: Array<{ target: string; source: string | null }> }>({
+      task: "field_match",
+      system: "Match fields.",
+      input: "fields",
+      schema: singleFieldSchema,
+    })
+
+    expect(createCompletion).toHaveBeenCalledTimes(1)
+    expect(result.output.decisions).toEqual([
+      { target: "Annual revenue | section: Merchant details", source: null },
+    ])
+  })
+
+  it("safely normalizes a unique shortened label and no-match text", async () => {
+    vi.stubGlobal("navigator", { gpu: {} })
+    const raw = '{"decisions":{"Annual revenue":"no match"}}'
+    const createCompletion = vi.fn().mockResolvedValue({ choices: [{ message: { content: raw } }] })
+    const engine = {
+      chat: { completions: { create: createCompletion } },
+      reload: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    }
+    webLlm.createEngine.mockResolvedValue(engine)
+
+    const result = await new LocalModelProvider("personal-gemma2-2b-it-v1").completeJson<{ decisions: Array<{ target: string; source: string | null }> }>({
+      task: "field_match",
+      system: "Match fields.",
+      input: "fields",
+      schema: singleFieldSchema,
+    })
+
+    expect(createCompletion).toHaveBeenCalledTimes(1)
+    expect(result.output.decisions).toEqual([
+      { target: "Annual revenue | section: Merchant details", source: null },
     ])
   })
 
@@ -252,6 +349,7 @@ describe("LocalModelProvider", () => {
     expect(createCompletion).toHaveBeenCalledTimes(2)
     expect(result.rawResponses).toEqual([unsafe, valid])
     expect(result.output.decisions[0].source).toBe("Annual turnover")
+    expect(createCompletion.mock.calls[1][0].messages).not.toContainEqual({ role: "assistant", content: unsafe })
   })
 
   it("accepts a valid null field-match decision without retrying", async () => {

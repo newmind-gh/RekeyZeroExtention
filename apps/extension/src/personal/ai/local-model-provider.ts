@@ -101,6 +101,45 @@ function fieldMatchContract(request: ModelRequest): FieldMatchContract | null {
   return targets.length > 0 && sources.length > 0 ? { targets, sources } : null
 }
 
+function normalizedAlias(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, "")
+}
+
+function resolveIdentity(
+  value: unknown,
+  allowed: string[],
+  kind: "target" | "source",
+): string | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= allowed.length) {
+    return allowed[value - 1]
+  }
+  if (typeof value !== "string") return null
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "")
+  const normalized = normalizedAlias(trimmed)
+  const prefix = kind === "target" ? "t" : "s"
+  const longPrefix = kind
+  const indexedMatch = normalized.match(new RegExp(`^(?:${prefix}|${longPrefix})(\\d+)$`))
+  if (indexedMatch) {
+    const index = Number(indexedMatch[1])
+    return index >= 1 && index <= allowed.length ? allowed[index - 1] : null
+  }
+
+  const normalizedMatches = allowed.filter((candidate) => normalizedAlias(candidate) === normalized)
+  if (normalizedMatches.length === 1) return normalizedMatches[0]
+
+  const withoutType = trimmed.replace(/\s*\[type:[^\]]+\]\s*$/i, "")
+  const labelMatches = allowed.filter((candidate) =>
+    normalizedAlias(candidate.split(" | section: ", 1)[0]) === normalizedAlias(withoutType)
+  )
+  return labelMatches.length === 1 ? labelMatches[0] : null
+}
+
+function nullLikeSource(value: unknown): boolean {
+  return value === null || (typeof value === "string" && ["", "null", "none", "nomatch", "n/a", "na"].includes(
+    value.trim().toLowerCase().replace(/[\s_-]+/g, ""),
+  ))
+}
+
 function canonicalDecision(
   value: unknown,
   allowedTargets: Set<string>,
@@ -109,17 +148,23 @@ function canonicalDecision(
   const decision = asRecord(value)
   if (!decision) return null
 
-  const target = decision.target ?? decision.target_field
+  const targetValue = decision.target ?? decision.target_field ?? decision.target_id ?? decision.target_index
   const source = Object.prototype.hasOwnProperty.call(decision, "source")
     ? decision.source
     : Object.prototype.hasOwnProperty.call(decision, "source_field")
       ? decision.source_field
+      : Object.prototype.hasOwnProperty.call(decision, "source_id")
+        ? decision.source_id
+        : Object.prototype.hasOwnProperty.call(decision, "source_index")
+          ? decision.source_index
       : null
 
-  if (typeof target !== "string" || !allowedTargets.has(target)) return null
-  if (source !== null && typeof source !== "string") return null
-  if (!allowedSources.has(source as string | null)) return null
-  return { target, source: source as string | null }
+  const target = resolveIdentity(targetValue, [...allowedTargets], "target")
+  if (!target || !allowedTargets.has(target)) return null
+  if (nullLikeSource(source)) return { target, source: null }
+  const resolvedSource = resolveIdentity(source, [...allowedSources].filter((value): value is string => value !== null), "source")
+  if (!resolvedSource || !allowedSources.has(resolvedSource)) return null
+  return { target, source: resolvedSource }
 }
 
 function decisionsFromExactMap(
@@ -130,12 +175,12 @@ function decisionsFromExactMap(
   const map = asRecord(value)
   if (!map) return null
   const entries = Object.entries(map)
-  if (!entries.length || entries.some(([target]) => !allowedTargets.has(target))) return null
+  if (!entries.length) return null
   const decisions: CanonicalFieldMatchDecision[] = []
   for (const [target, source] of entries) {
-    if (source !== null && typeof source !== "string") return null
-    if (!allowedSources.has(source as string | null)) return null
-    decisions.push({ target, source: source as string | null })
+    const decision = canonicalDecision({ target, source }, allowedTargets, allowedSources)
+    if (!decision) return null
+    decisions.push(decision)
   }
   return decisions
 }
@@ -146,11 +191,17 @@ function canonicalizeFieldMatchOutput(
 ): CanonicalFieldMatchOutput | null {
   const allowedTargets = new Set(contract.targets)
   const allowedSources = new Set<string | null>(contract.sources)
-  const root = asRecord(output)
+  const unwrapped = Array.isArray(output)
+    && output.length === 1
+    && asRecord(output[0])
+    && ["decisions", "matches", "mappings"].some((key) => Object.prototype.hasOwnProperty.call(output[0], key))
+    ? output[0]
+    : output
+  const root = asRecord(unwrapped)
 
   let rawDecisions: unknown[] | null = null
-  if (Array.isArray(output)) {
-    rawDecisions = output
+  if (Array.isArray(unwrapped)) {
+    rawDecisions = unwrapped
   } else if (root) {
     if (Array.isArray(root.decisions)) rawDecisions = root.decisions
     else if (root.decisions !== undefined) {
@@ -164,6 +215,14 @@ function canonicalizeFieldMatchOutput(
 
     if (!rawDecisions && Array.isArray(root.matches)) rawDecisions = root.matches
     if (!rawDecisions && Array.isArray(root.mappings)) rawDecisions = root.mappings
+    if (!rawDecisions && root.matches !== undefined) {
+      const mapped = decisionsFromExactMap(root.matches, allowedTargets, allowedSources)
+      if (mapped) rawDecisions = mapped
+    }
+    if (!rawDecisions && root.mappings !== undefined) {
+      const mapped = decisionsFromExactMap(root.mappings, allowedTargets, allowedSources)
+      if (mapped) rawDecisions = mapped
+    }
     if (!rawDecisions && canonicalDecision(root, allowedTargets, allowedSources)) rawDecisions = [root]
     if (!rawDecisions) {
       const mapped = decisionsFromExactMap(root, allowedTargets, allowedSources)
@@ -174,13 +233,13 @@ function canonicalizeFieldMatchOutput(
 
   const byTarget = new Map<string, string | null>()
   for (const value of rawDecisions) {
-    const alreadyCanonical = asRecord(value)
-      && typeof asRecord(value)?.target === "string"
-      && Object.prototype.hasOwnProperty.call(asRecord(value)!, "source")
-    const decision = alreadyCanonical
-      ? canonicalDecision(value, allowedTargets, allowedSources)
-      : canonicalDecision(value, allowedTargets, allowedSources)
-    if (!decision || byTarget.has(decision.target)) return null
+    const decision = canonicalDecision(value, allowedTargets, allowedSources)
+    if (!decision) return null
+    if (byTarget.has(decision.target)) {
+      const existing = byTarget.get(decision.target) ?? null
+      if (existing !== decision.source) byTarget.set(decision.target, null)
+      continue
+    }
     byTarget.set(decision.target, decision.source)
   }
 
@@ -210,9 +269,7 @@ function webLlmSystemPrompt(request: ModelRequest): string {
   const contract = fieldMatchContract(request)
   if (!contract) return request.system
 
-  const targetList = contract.targets.map((target) => `- ${JSON.stringify(target)}`).join("\n")
-  const sourceList = contract.sources.map((source) => `- ${source === null ? "null" : JSON.stringify(source)}`).join("\n")
-  return `${request.system}\n\nWEBLLM OUTPUT CONTRACT — follow literally:\nReturn exactly one JSON object with this shape: {"decisions":[{"target":"<exact target identity>","source":"<exact source identity or null>"}]}\nUse only the keys "decisions", "target", and "source". Never rename them to target_field/source_field or use nested maps.\nInclude every target below exactly once. Copy each complete target identity character-for-character, including section text. Do not shorten it.\nChoose source only from the allowed source identities below, or use null.\nDo not wrap the JSON object in an array. Do not use markdown fences. Do not add explanation or commentary.\n\nExact target identities:\n${targetList}\n\nAllowed source identities:\n${sourceList}`
+  return `${request.system}\n\nWEBLLM OUTPUT CONTRACT — follow literally:\nThe user message assigns compact IDs t1, t2, ... to target fields and s1, s2, ... to source fields.\nReturn exactly one JSON object with this shape: {"decisions":[{"target":"t1","source":"s1"},{"target":"t2","source":null}]}\nUse only the keys "decisions", "target", and "source". Include every target ID exactly once. Choose only a listed source ID or null.\nDo not repeat field labels, wrap the object in an array, use markdown fences, or add commentary.`
 }
 
 export class LocalModelProvider implements PersonalModelProvider {
@@ -304,14 +361,17 @@ export class LocalModelProvider implements PersonalModelProvider {
           if (signal?.aborted) throw new DOMException("Local AI request was cancelled", "AbortError")
           const retry = await complete([
             ...baseMessages,
-            { role: "assistant", content },
-            { role: "user", content: "The previous response was invalid JSON or could not be safely normalized to the required field-match contract. Return one compact JSON object with a decisions array. Use only exact target identities and allowed source identities from the prompt. Include every target exactly once. Do not add markdown or commentary." },
+            { role: "user", content: "Return only one compact JSON object with a decisions array. Use each listed t-ID exactly once and only a listed s-ID or null. Do not repeat labels, add markdown, or add commentary." },
           ])
           content = retry.choices[0]?.message.content
           if (!content) throw new Error("Local AI returned no result on retry")
           rawResponses.push(content)
           try { output = parseWebLlmOutput<T>(request, content) }
-          catch { throw new Error("Local AI returned an unsafe or invalid field-match format twice. Try creating the Fill Setup again.") }
+          catch {
+            const error = new Error("Local AI returned an unsafe or invalid field-match format twice. Try creating the Fill Setup again.") as Error & { rawResponses: string[] }
+            error.rawResponses = rawResponses
+            throw error
+          }
         }
         return {
           output,

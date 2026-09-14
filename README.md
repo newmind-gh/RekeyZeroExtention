@@ -37,9 +37,21 @@ All model options are selectable. Selecting an API model reveals only that provi
 
 ![RekeyZero Personal Side Panel showing ZeroKey Profile and AI ZeroKey Profile controls](docs/images/rekeyzero-side-panel.png)
 
+### Source and target tab selection
+
+![RekeyZero ZeroKey Profile editor showing source and target tab selection](docs/images/rekeyzero-profile-tab-selection.png)
+
+### Field mappings
+
+![RekeyZero Field Mappings editor showing source-field selection and existing-value policy](docs/images/rekeyzero-field-mappings.png)
+
 ### AI ZeroKey Profile editor
 
 ![RekeyZero AI ZeroKey Profile editor showing source and target selection](docs/images/rekeyzero-ai-profile-editor.png)
+
+### Saved AI ZeroKey Profile
+
+![RekeyZero Personal Side Panel showing a saved AI ZeroKey Profile with validated field matches](docs/images/rekeyzero-ai-profile-saved.png)
 
 ## ReKeyZero Admin
 

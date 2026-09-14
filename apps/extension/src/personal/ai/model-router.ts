@@ -205,7 +205,7 @@ export class PersonalModelRouter {
     const request: ModelRequest = input.route === "local_lite" ? {
       task: "field_match",
       system: LOCAL_FIELD_MATCH_PROMPT,
-      input: localInput.text,
+      input: localInput.indexedText,
       schema: localSchema,
       maxTokens: Math.min(1_024, 128 + input.controls.length * 64),
     } : {

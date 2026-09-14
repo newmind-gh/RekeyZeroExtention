@@ -42,7 +42,14 @@ async function reportRuntimeError(error: unknown, requestType: string): Promise<
     : localSettings?.localModelEnabled && localSettings.localModelId
       ? { providerId: "personal-local-lite", modelId: localSettings.localModelId }
       : {}
-  await logPersonalRuntimeError(error, requestType, context).catch(() => undefined)
+  const rawResponses = error instanceof Error && "rawResponses" in error
+    && Array.isArray((error as Error & { rawResponses?: unknown }).rawResponses)
+    ? (error as Error & { rawResponses: string[] }).rawResponses
+    : []
+  await logPersonalRuntimeError(error, requestType, {
+    ...context,
+    ...(rawResponses.length ? { rawResponse: rawResponses.join("\n\n--- retry ---\n\n") } : {}),
+  }).catch(() => undefined)
 }
 
 globalThis.addEventListener("error", (event: ErrorEvent) => {

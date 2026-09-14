@@ -76,5 +76,12 @@ export function localFieldMatchInput(
     "Target fields still needing a match:",
     ...targetFields.map(describeTargetField),
   ].join("\n")
-  return { text, sourceFields, targetFields }
+  const indexedText = [
+    "Source fields still available:",
+    ...sourceFields.map((field, index) => `- s${index + 1}: ${describeSourceField(field).slice(2)}`),
+    "",
+    "Target fields still needing a match:",
+    ...targetFields.map((field, index) => `- t${index + 1}: ${describeTargetField(field).slice(2)}`),
+  ].join("\n")
+  return { text, indexedText, sourceFields, targetFields }
 }
